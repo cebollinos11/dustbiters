@@ -35,27 +35,44 @@ class Dustbiters:
 
         self.turn = random.choice([0, 1])
 
-        # Windows: left (convoy), middle (hands+convoys), right (messages)
+        # Windows: left (convoy), middle (hands), right (log + input)
         height, width = self.stdscr.getmaxyx()
         convoy_width = width // 4
         player_width = width // 2
         msg_width = width - (convoy_width + player_width)
 
+        # split right column: log + input
+        log_height = max(5, height - 6)   # leave some room for input; min height guard
+        input_height = 6
+
         self.win_convoy = curses.newwin(height, convoy_width, 0, 0)
         self.win_hand = curses.newwin(height, player_width, 0, convoy_width)
-        self.win_msg = curses.newwin(height, msg_width, 0, convoy_width + player_width)
+        self.win_log = curses.newwin(log_height, msg_width, 0, convoy_width + player_width)
+        self.win_input = curses.newwin(input_height, msg_width, log_height, convoy_width + player_width)
 
-    def draw_screen(self, message=""):
-        self.win_convoy.clear()
-        self.win_hand.clear()
-        self.win_msg.clear()
+        self.log_messages = []  # keep past actions here
 
-        # Convoy (vertical list)
+    def add_log(self, text):
+        # Truncate to log window height - 2 for borders/header
+        max_lines = max(1, self.win_log.getmaxyx()[0] - 2)
+        self.log_messages.append(text)
+        if len(self.log_messages) > max_lines:
+            # drop oldest lines
+            self.log_messages = self.log_messages[-max_lines:]
+
+    def draw_screen(self, message="", message_color=None):
+        # Clear windows
+        for w in (self.win_convoy, self.win_hand, self.win_log, self.win_input):
+            try:
+                w.clear()
+            except curses.error:
+                pass
+
+        # Convoy
         try:
             self.win_convoy.addstr(1, 1, "CONVOY (Back -> Front):")
         except curses.error:
             pass
-
         y = 2
         for i, car in enumerate(self.convoy):
             color = None
@@ -64,7 +81,7 @@ class Dustbiters:
                     color = p["color"]
                     break
             try:
-                line_text = f"{i}: {car}"  # add index before car name
+                line_text = f"{i}: {car}"
                 if color:
                     self.win_convoy.attron(curses.color_pair(color))
                     self.win_convoy.addstr(y, 1, line_text)
@@ -75,87 +92,134 @@ class Dustbiters:
                 pass
             y += 1
 
-        # Players' hands and convoys (stacked vertically in the middle)
+        # Players' hands (middle)
         y = 1
         for p in self.players:
             try:
                 self.win_hand.attron(curses.color_pair(p["color"]))
                 self.win_hand.addstr(y, 1, f"{p['name']} Hand:")
+                self.win_hand.attroff(curses.color_pair(p["color"]))
                 for i, card in enumerate(p["hand"]):
                     self.win_hand.addstr(y + i + 1, 3, card)
                 y += len(p["hand"]) + 2
-
-                # self.win_hand.addstr(y, 1, "Convoy:")
-                # for i, car in enumerate(p["convoy"]):
-                #     self.win_hand.addstr(y + i + 1, 3, car)
-                # y += len(p["convoy"]) + 3
-                # self.win_hand.attroff(curses.color_pair(p["color"]))
             except curses.error:
                 pass
 
-        # Messages
-        if message:
+        # Log window
+        try:
+            self.win_log.addstr(0, 1, "Event Log:")
+        except curses.error:
+            pass
+        y = 1
+        for msg in self.log_messages:
             try:
-                self.win_msg.addstr(1, 1, message)
+                # ensure we don't write past window
+                self.win_log.addstr(y, 1, msg[: self.win_log.getmaxyx()[1] - 3])
+            except curses.error:
+                pass
+            y += 1
+
+        # Input window: show message/prompt at top of input area
+        try:
+            if message and message_color:
+                self.win_input.attron(curses.color_pair(message_color))
+                self.win_input.addstr(1, 1, message[: self.win_input.getmaxyx()[1] - 3])
+                self.win_input.attroff(curses.color_pair(message_color))
+            elif message:
+                self.win_input.addstr(1, 1, message[: self.win_input.getmaxyx()[1] - 3])
+        except curses.error:
+            pass
+
+        # Draw borders and refresh
+        try:
+            self.win_convoy.box()
+            self.win_hand.box()
+            self.win_log.box()
+            self.win_input.box()
+        except curses.error:
+            pass
+
+        for w in (self.win_convoy, self.win_hand, self.win_log, self.win_input):
+            try:
+                w.refresh()
             except curses.error:
                 pass
 
-        self.win_convoy.box()
-        self.win_hand.box()
-        self.win_msg.box()
-
-        self.win_convoy.refresh()
-        self.win_hand.refresh()
-        self.win_msg.refresh()
     def get_input(self, prompt):
-        self.win_msg.clear()
-        self.win_msg.box()
-        self.win_msg.addstr(1, 1, prompt)
-        self.win_msg.refresh()
+        # Show the prompt in the input window (draw_screen will place it)
+        # then place a small "> " and read user input on next line.
+        self.draw_screen(prompt)
         curses.echo()
-        input_str = self.win_msg.getstr(2, 1).decode("utf-8").strip()
+        try:
+            # show a small prompt marker on the input line 2
+            maxy, maxx = self.win_input.getmaxyx()
+            # write the marker
+            try:
+                self.win_input.addstr(2, 1, "> ")
+            except curses.error:
+                pass
+            self.win_input.refresh()
+            # read starting after the "> " (col 3)
+            input_bytes = self.win_input.getstr(2, 3, max(1, maxx - 4))
+            input_str = input_bytes.decode("utf-8").strip() if input_bytes else ""
+        except curses.error:
+            input_str = ""
         curses.noecho()
+        # redraw without the ephemeral prompt so the UI stays neat
+        self.draw_screen()
         return input_str
 
     def build(self, player):
         if not player["hand"]:
-            self.draw_screen("No cards in hand to build!")
+            self.add_log("No cards in hand to build!")
+            self.draw_screen()
             return False
         choice = self.get_input(f"Choose a card to build from {player['hand']}: ")
         if choice not in player["hand"]:
-            self.draw_screen("Invalid choice!")
+            self.add_log("Invalid choice!")
+            self.draw_screen()
             return False
         player["hand"].remove(choice)
         player["convoy"].append(choice)
         self.convoy.append(choice)
+        self.add_log(f"{player['name']} built {choice}")
+        self.draw_screen()
         return True
 
     def drive(self, player):
         if not player["convoy"]:
-            self.draw_screen("No cars to drive!")
+            self.add_log("No cars to drive!")
+            self.draw_screen()
             return False
         choice = self.get_input(f"Choose a car to drive from {player['convoy']}: ")
         if choice not in player["convoy"]:
-            self.draw_screen("Invalid choice!")
+            self.add_log("Invalid choice!")
+            self.draw_screen()
             return False
         idx = self.convoy.index(choice)
         direction = self.get_input("Move forward (f) or backward (b)? ").lower()
         if direction == "f" and idx < len(self.convoy) - 1:
             self.convoy[idx], self.convoy[idx+1] = self.convoy[idx+1], self.convoy[idx]
+            self.add_log(f"{player['name']} moved {choice} forward")
         elif direction == "b" and idx > 0:
             self.convoy[idx], self.convoy[idx-1] = self.convoy[idx-1], self.convoy[idx]
+            self.add_log(f"{player['name']} moved {choice} backward")
         else:
-            self.draw_screen("Can't move that way!")
+            self.add_log("Can't move that way!")
+            self.draw_screen()
             return False
+        self.draw_screen()
         return True
 
     def draw(self, player):
         if not self.deck:
-            self.draw_screen("Deck empty!")
+            self.add_log("Deck empty!")
+            self.draw_screen()
             return False
         card = self.deck.pop(0)
         player["hand"].append(card)
-        self.draw_screen(f"Drew card: {card}")
+        self.add_log(f"{player['name']} drew: {card}")
+        self.draw_screen()
         return True
 
     def sandstorm(self):
@@ -166,7 +230,8 @@ class Dustbiters:
         for p in self.players:
             if destroyed in p["convoy"]:
                 p["convoy"].remove(destroyed)
-        self.draw_screen(f"Sandstorm destroyed: {destroyed}")
+        self.add_log(f"Sandstorm destroyed: {destroyed}")
+        self.draw_screen()
 
     def check_win(self):
         for i, p in enumerate(self.players):
@@ -178,18 +243,8 @@ class Dustbiters:
         player = self.players[self.turn]
         actions = 3
         while actions > 0:
-            # color message window for current player
-            try:
-                self.win_msg.attron(curses.color_pair(player["color"]))
-            except curses.error:
-                pass
-
-            self.draw_screen(f"{player['name']}'s turn. Actions left: {actions}")
-
-            try:
-                self.win_msg.attroff(curses.color_pair(player["color"]))
-            except curses.error:
-                pass
+            # Show ephemeral turn message in the input window in player's color
+            self.draw_screen(f"{player['name']}'s turn. Actions left: {actions}", message_color=player["color"])
 
             choice = self.get_input("Choose action (build/drive/draw/end): ").lower()
             success = False
@@ -201,12 +256,21 @@ class Dustbiters:
                 success = self.draw(player)
             elif choice == "end":
                 break
+            else:
+                # unrecognized action: show a short message but don't consume action
+                self.add_log(f"Unknown action: {choice}")
+                self.draw_screen()
+
             if success:
                 actions -= 1
+
+        # sandstorm after turn
         self.sandstorm()
+
         winner = self.check_win()
         if winner is not None:
-            self.draw_screen(f"{self.players[winner]['name']} wins!")
+            self.add_log(f"{self.players[winner]['name']} wins!")
+            self.draw_screen()
             self.get_input("Press Enter to exit...")
             return True
         self.turn = 1 - self.turn
