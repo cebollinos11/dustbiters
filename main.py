@@ -35,66 +35,65 @@ class Dustbiters:
 
         self.turn = random.choice([0, 1])
 
-        # Windows: top (convoy), middle (hand), bottom (messages)
+        # Windows: left (convoy), middle (hands+convoys), right (messages)
         height, width = self.stdscr.getmaxyx()
-        self.win_convoy = curses.newwin(5, width, 0, 0)
-        self.win_hand = curses.newwin(7, width, 6, 0)
-        self.win_msg = curses.newwin(height - 13, width, 13, 0)
+        convoy_width = width // 4
+        player_width = width // 2
+        msg_width = width - (convoy_width + player_width)
+
+        self.win_convoy = curses.newwin(height, convoy_width, 0, 0)
+        self.win_hand = curses.newwin(height, player_width, 0, convoy_width)
+        self.win_msg = curses.newwin(height, msg_width, 0, convoy_width + player_width)
 
     def draw_screen(self, message=""):
         self.win_convoy.clear()
         self.win_hand.clear()
         self.win_msg.clear()
 
-        # Convoy header
+        # Convoy (vertical list)
         try:
             self.win_convoy.addstr(1, 1, "CONVOY (Back -> Front):")
         except curses.error:
             pass
 
-        # Print each car in the convoy, coloring by owner
-        x = 1
         y = 2
         for i, car in enumerate(self.convoy):
             color = None
             for p in self.players:
                 if car in p["convoy"]:
-                    color = p.get("color")
+                    color = p["color"]
                     break
-
             try:
+                line_text = f"{i}: {car}"  # add index before car name
                 if color:
                     self.win_convoy.attron(curses.color_pair(color))
-                    self.win_convoy.addstr(y, x, car)
+                    self.win_convoy.addstr(y, 1, line_text)
                     self.win_convoy.attroff(curses.color_pair(color))
                 else:
-                    self.win_convoy.addstr(y, x, car)
+                    self.win_convoy.addstr(y, 1, line_text)
             except curses.error:
                 pass
+            y += 1
 
-            x += len(car)
-            # separator between cars
-            if i != len(self.convoy) - 1:
-                sep = " - "
-                try:
-                    self.win_convoy.addstr(y, x, sep)
-                except curses.error:
-                    pass
-                x += len(sep)
-
-        # Hands and per-player convoy (colored)
-        for i, p in enumerate(self.players):
-            hand_str = " ".join(p["hand"])
-            convoy_str = " ".join(p["convoy"])
+        # Players' hands and convoys (stacked vertically in the middle)
+        y = 1
+        for p in self.players:
             try:
                 self.win_hand.attron(curses.color_pair(p["color"]))
-                self.win_hand.addstr(i * 3 + 1, 1, f"{p['name']} Hand: {hand_str}")
-                self.win_hand.addstr(i * 3 + 2, 1, f"Convoy: {convoy_str}")
-                self.win_hand.attroff(curses.color_pair(p["color"]))
+                self.win_hand.addstr(y, 1, f"{p['name']} Hand:")
+                for i, card in enumerate(p["hand"]):
+                    self.win_hand.addstr(y + i + 1, 3, card)
+                y += len(p["hand"]) + 2
+
+                # self.win_hand.addstr(y, 1, "Convoy:")
+                # for i, car in enumerate(p["convoy"]):
+                #     self.win_hand.addstr(y + i + 1, 3, car)
+                # y += len(p["convoy"]) + 3
+                # self.win_hand.attroff(curses.color_pair(p["color"]))
             except curses.error:
                 pass
 
-        # Message/Input
+        # Messages
         if message:
             try:
                 self.win_msg.addstr(1, 1, message)
@@ -108,7 +107,6 @@ class Dustbiters:
         self.win_convoy.refresh()
         self.win_hand.refresh()
         self.win_msg.refresh()
-
     def get_input(self, prompt):
         self.win_msg.clear()
         self.win_msg.box()
