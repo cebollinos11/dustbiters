@@ -48,15 +48,14 @@ class Dustbiters:
 
         # Convoy header
         try:
-            self.win_convoy.addstr(0, 0, "CONVOY (Back -> Front):")
+            self.win_convoy.addstr(1, 1, "CONVOY (Back -> Front):")
         except curses.error:
             pass
 
         # Print each car in the convoy, coloring by owner
-        x = 0
-        y = 1
+        x = 1
+        y = 2
         for i, car in enumerate(self.convoy):
-            # determine owner color (first matching player)
             color = None
             for p in self.players:
                 if car in p["convoy"]:
@@ -71,7 +70,6 @@ class Dustbiters:
                 else:
                     self.win_convoy.addstr(y, x, car)
             except curses.error:
-                # ignore if text runs off-window
                 pass
 
             x += len(car)
@@ -90,8 +88,8 @@ class Dustbiters:
             convoy_str = " ".join(p["convoy"])
             try:
                 self.win_hand.attron(curses.color_pair(p["color"]))
-                self.win_hand.addstr(i * 3, 0, f"{p['name']} Hand: {hand_str}")
-                self.win_hand.addstr(i * 3 + 1, 0, f"Convoy: {convoy_str}")
+                self.win_hand.addstr(i * 3 + 1, 1, f"{p['name']} Hand: {hand_str}")
+                self.win_hand.addstr(i * 3 + 2, 1, f"Convoy: {convoy_str}")
                 self.win_hand.attroff(curses.color_pair(p["color"]))
             except curses.error:
                 pass
@@ -99,7 +97,7 @@ class Dustbiters:
         # Message/Input
         if message:
             try:
-                self.win_msg.addstr(0, 0, message)
+                self.win_msg.addstr(1, 1, message)
             except curses.error:
                 pass
 
