@@ -73,16 +73,16 @@ class Dustbiters:
         for w in (self.win_convoy, self.win_hand, self.win_log, self.win_input):
             w.clear()
 
-        # Convoy
-        self.win_convoy.addstr(1, 1, "CONVOY (Back -> Front):")
+        # Convoy (front -> back)
+        self.win_convoy.addstr(1, 1, "CONVOY (Front -> Back):")
         y = 2
-        for i, car in enumerate(self.convoy):
+        for display_idx, car in enumerate(reversed(self.convoy)):
             color = None
             for p in self.players:
                 if car in p["convoy"]:
                     color = p["color"]
                     break
-            line_text = f"{i}: {car}"
+            line_text = f"[{display_idx+1}] {car}"
             if color:
                 self.win_convoy.attron(curses.color_pair(color))
                 self.win_convoy.addstr(y, 1, line_text)
@@ -98,7 +98,7 @@ class Dustbiters:
             self.win_hand.addstr(y, 1, f"{p['name']} Hand:")
             self.win_hand.attroff(curses.color_pair(p["color"]))
             for i, card in enumerate(p["hand"]):
-                self.win_hand.addstr(y + i + 1, 3, card)
+                self.win_hand.addstr(y + i + 1, 3, f"[{i+1}] {card}")
             y += len(p["hand"]) + 2
 
         # Log
@@ -186,13 +186,13 @@ class Dustbiters:
 
     def apply_action(self, player, action: Action):
         if action.type == "invalid":
-            return False  # don't consume an action
+            return False
         if action.type == "build":
             return self.build(player, action.params.get("card"))
         elif action.type == "drive":
             return self.drive(player,
-                            action.params.get("car"),
-                            action.params.get("direction"))
+                              action.params.get("car"),
+                              action.params.get("direction"))
         elif action.type == "draw":
             return self.draw(player)
         elif action.type == "end":
@@ -236,30 +236,50 @@ class Dustbiters:
 # Policies (Human & AI)
 # ------------------------
 def human_policy(game, player, actions_left):
-    while True:  # keep asking until valid
-        choice = game.get_input("Choose action (build/drive/draw/end): ").lower()
-        if choice == "build":
+    while True:
+        choice = game.get_input(
+            "Commands: b N=build hand[N], d=draw, a N=forward, r N=backward, e=end"
+        ).lower().split()
+
+        if not choice:
+            game.add_log("Empty input! Try again.")
+            game.draw_screen()
+            continue
+
+        cmd = choice[0]
+        arg = int(choice[1]) - 1 if len(choice) > 1 and choice[1].isdigit() else None
+
+        if cmd == "b":  # build
             if not player["hand"]:
                 game.add_log("No cards to build!")
                 return Action("invalid")
-            card = game.get_input(f"Choose card {player['hand']}: ")
-            return Action("build", {"card": card})
-        elif choice == "drive":
-            if not player["convoy"]:
-                game.add_log("No cars to drive!")
+            if arg is None or arg < 0 or arg >= len(player["hand"]):
+                game.add_log("Invalid card index!")
                 return Action("invalid")
-            car = game.get_input(f"Choose car {player['convoy']}: ")
-            direction = game.get_input("f/b: ").lower()
+            return Action("build", {"card": player["hand"][arg]})
+
+        elif cmd in ("a", "r"):  # accelerate/reverse
+            if not player["convoy"]:
+                game.add_log("No cars to move!")
+                return Action("invalid")
+            if arg is None or arg < 0 or arg >= len(player["convoy"]):
+                game.add_log("Invalid car index!")
+                return Action("invalid")
+
+            # Map display index (front=1) to convoy car
+            car = list(reversed(player["convoy"]))[arg]
+            direction = "f" if cmd == "a" else "b"
             return Action("drive", {"car": car, "direction": direction})
-        elif choice == "draw":
+
+        elif cmd == "d":
             return Action("draw")
-        elif choice == "end":
+
+        elif cmd == "e":
             return Action("end")
+
         else:
             game.add_log("Invalid input! Try again.")
             game.draw_screen()
-            # loop continues until valid
-
 
 def random_ai_policy(game, player, actions_left):
     options = ["build", "drive", "draw", "end"]
@@ -278,7 +298,6 @@ def random_ai_policy(game, player, actions_left):
 # ------------------------
 def main(stdscr):
     game = Dustbiters(stdscr)
-    # Example: Player 1 human, Player 2 random AI
     policies = [human_policy, random_ai_policy]
     game.play(policies)
 
