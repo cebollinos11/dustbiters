@@ -262,9 +262,22 @@ def human_policy(game, player, actions_left):
             if not player["convoy"]:
                 game.add_log("No cars to move!")
                 return Action("invalid")
-            if arg is None or arg < 0 or arg >= len(player["convoy"]):
-                game.add_log("Invalid car index!")
+
+            if arg is None or arg < 0 or arg >= len(game.convoy):
+                game.add_log("Invalid convoy index!")
                 return Action("invalid")
+
+            # Map display index (front=1) to convoy car
+            car = list(reversed(game.convoy))[arg]
+
+            # Check ownership
+            if car not in player["convoy"]:
+                game.add_log("That car does not belong to you!")
+                return Action("invalid")
+
+            direction = "f" if cmd == "a" else "b"
+            return Action("drive", {"car": car, "direction": direction})
+
 
             # Map display index (front=1) to convoy car
             car = list(reversed(player["convoy"]))[arg]
@@ -282,7 +295,7 @@ def human_policy(game, player, actions_left):
             game.draw_screen()
 
 def random_ai_policy(game, player, actions_left):
-    options = ["build", "drive", "draw", "end"]
+    options = ["build", "drive", "draw"]
     choice = random.choice(options)
     if choice == "build" and player["hand"]:
         return Action("build", {"card": random.choice(player["hand"])})
