@@ -266,8 +266,15 @@ while not done:
         # Show state
         print("\nYour turn!")
         print("Hand:", env.env.players[human_player]["hand"])
-        print("Convoy:", env.env.convoy)
 
+        # Show convoy with owner tags
+        convoy_display = []
+        for car in env.env.convoy:
+            owner = "You" if car in env.env.players[human_player]["convoy"] else "AI"
+            convoy_display.append(f"{car}({owner})")
+        print("Convoy:", " <- ".join(convoy_display))
+
+        # Show legal actions
         legal = env.env.legal_actions()
         for i, a in enumerate(legal):
             print(f"{i}: {a}")
@@ -275,19 +282,18 @@ while not done:
         choice = int(input("Choose action: "))
         obs, reward, done, _, _ = env.step(choice)
     else:
-# Agent's move
-        legal = env.env.legal_actions()   # snapshot legal moves BEFORE stepping
+        # AI's move
+        legal = env.env.legal_actions()
         action, _ = model.predict(obs)
 
-        # just in case model picks something invalid (like padding index)
         if action >= len(legal):
-            chosen_action = legal[-1]  # fallback: pick last legal action
+            chosen_action = legal[-1]
         else:
             chosen_action = legal[action]
 
         print(f"AI played: {chosen_action}")
-
         obs, reward, done, _, _ = env.step(action)
+
 
 winner = env.env.winner
 print("Game Over!")
